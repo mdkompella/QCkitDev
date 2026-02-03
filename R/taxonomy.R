@@ -433,3 +433,182 @@ te_check <- function(x, species_col, park_code, expansion = FALSE) {
     }
   }
 }
+
+#' Load a full list of threatened and endangered species from the USFWS
+#'
+#' @description `load_te_species()` gets the USFWS's catalog of Threatened and Endangered species and
+#' resolves scientific names and record IDs using two taxonomic databases: Integrated Taxonomic Information System (ITIS) and
+#' Global Biodiversity Information Facility (GBIF). It then stores this data as a csv file in the user's cache. It also returns the dataframe.
+#'
+#' @details `load_te_species()` relies on an API call to the Environmental Conservation Online System (ECOS) at https://ecos.fws.gov/ecp/ and
+#' the Global Names Verifier (GNV) https://verifier.globalnames.org/ from Global Names Architecture. It writes the resulting dataframe as a csv
+#' entitled "resolved_te_species.csv" to the user's cache. In order to ensure that the species list is current, the function checks if there is
+#' already a file named "resolved_te_species.csv" in the user's cache, and if there is, it checks if it was last modified over 30 days ago. If the
+#' existing data is over 30 days old, it overwrites it with new data. Data can be updated at any time using force_refresh.
+#'
+#' @param force_refresh
+#'     (logical) Defaults to FALSE. If set to TRUE, gets the current list of T&E species. Data is automatically refreshed if it is over one month old.
+#' @param domestic_only
+#'     (logical) Defaults to TRUE, meaning that the function loads data only for species that occur domestically. If set to FALSE, it returns all species.
+#' @param return_object
+#'     (logical) Defaults to FALSE.If set to TRUE, returns a data frame object of T&E species and resolved taxonomy.
+#'
+#' @return The function returns a data frame with all listed domestic (or foreign and domestic species, if requested by the user) in the ECOS database, and taxonomic names are record IDs resolved using ITIS and GBIF.
+#'
+#' @export
+#' @examples
+#' \dontrun{
+#' load_te_species(force_refresh = TRUE, domestic_only = TRUE)
+
+load_te_species <- function(force_refresh = FALSE, domestic_only = TRUE, return_object = FALSE) {
+
+  refresh <- force_refresh
+
+  # check if te species list exists in user's cache
+  if (file.exists(paste0(rappdirs::user_cache_dir(), "/", "resolved_te_species.csv"))) {
+    # check when file was last modified
+    last_modified <- file.info(paste0(rappdirs::user_cache_dir(), "/", "resolved_te_species.csv"))$mtime
+    message(paste0("T&E species file with resolved taxonomy found in cache.\nFile last modified on ",
+                   last_modified, "."))
+    if (difftime(Sys.time(), last_modified, units = c("days")) > 30) {
+      # set refresh to true if file is over 30 days old
+      message("File was last modified over 30 days ago. Refreshing data.")
+      refresh <- TRUE
+    } else {
+      user_input <- readline(prompt = ("File was last modified within the last 30 days.\nType 'R' to refresh data or Enter to skip refresh."))
+      if (user_input %in% c("R", "r")) {
+        refresh <- TRUE
+      } else {
+        refresh <- FALSE
+      }
+    }
+  } else {
+    # if a resolved_te_species.csv file does not exist, set refresh to true to get data
+    refresh <- TRUE
+  }
+
+  if (refresh) {
+    message("Loading ECOS database.")
+
+    # pull whole list of t&e species
+    te_list_url <- "https://ecos.fws.gov/ecp/pullreports/catalog/species/report/species/export?format=json&columns=%2Fspecies%40sn%2Ccn%2Csid%3B%2Fspecies%2Ftaxonomy%40group%3B%2Fspecies%40status%2Cstatus_category%2Cdesc%2Cis_foreign"
+    te_query <- httr::GET(te_list_url)
+
+    te_response <- jsonlite::fromJSON(httr::content(te_query, as = "text"))$data
+
+    te_response_cleaned <- purrr::map_depth(te_response, 2, ~ifelse(is.null(.x), NA, .x))
+
+    te_response_cleaned <- lapply(X = te_response_cleaned, FUN = unlist)
+
+    all_te_species <- do.call(rbind.data.frame, te_response_cleaned)
+
+    colnames(all_te_species) <- c("ECOS_scientificName", "ECOS_commonName", "ECOS_ID", "ECOS_taxonomicGroup",
+                                  "ECOS_listingStatus", "ECOS_statusCategory", "ECOS_whereListed", "ECOS_isForeign")
+
+    # keep only listed, proposed, candidate, and species of concern
+    all_te_species <- all_te_species |>
+      dplyr::filter(ECOS_listingStatus %in% c("Species of Concern") |
+                      ECOS_statusCategory %in% c("Listed", "Proposed for Listing", "Candidate"))
+
+    # filter to domestic only based on domestic_only
+    if (domestic_only) {
+      all_te_species <- all_te_species |>
+        dplyr::filter(ECOS_isForeign == "FALSE") |>
+        dplyr::select(-ECOS_isForeign)
+    }
+
+    # edit scientific names to better match ITIS
+    cleaned_sci_names <- all_te_species$ECOS_scientificName
+
+    # fix known misspellings of scientific names
+    cleaned_sci_names <- gsub("Acalyptera", "Acalypta", cleaned_sci_names)
+    cleaned_sci_names <- gsub("Alopecoenas", "Pampusana", cleaned_sci_names)
+    cleaned_sci_names <- gsub("Arundinax", "Iduna", cleaned_sci_names)
+    cleaned_sci_names <- gsub("Cyanecula", "Luscinia", cleaned_sci_names)
+    cleaned_sci_names <- gsub("Hemipachnolia subporphyria subporphyria", "Hemipachnobia subporphyrea", cleaned_sci_names)
+    cleaned_sci_names <- gsub("Itodacnus", "Itodacne", cleaned_sci_names)
+    cleaned_sci_names <- gsub("Larvivora", "Luscinia", cleaned_sci_names)
+    cleaned_sci_names <- gsub("Microcylleopus", "Microcylloepus", cleaned_sci_names)
+    cleaned_sci_names <- gsub("Nucombia plicata", "Newcombia cumingi", cleaned_sci_names)
+    cleaned_sci_names <- gsub("Plejebus", "Plebejus", cleaned_sci_names)
+    cleaned_sci_names <- gsub("Pseudanopthalmus", "Pseudanophthalmus", cleaned_sci_names)
+    cleaned_sci_names <- gsub("Spartiniphaga", "Photedes", cleaned_sci_names)
+    cleaned_sci_names <- gsub("Toltecus", "Comanchelus", cleaned_sci_names)
+
+    # remove synonyms (between parentheses)
+    cleaned_sci_names <- gsub(R"{\s*\([^\)]+\)}", "", cleaned_sci_names)
+
+    # add cleaned scientific names to all_te_species df (for later joins)
+    all_te_species[["scientificNameCleaned"]] <- cleaned_sci_names
+
+    # split names into batches of 50 to pass through GNV
+    name_batches <- split(cleaned_sci_names, ceiling(seq_along(cleaned_sci_names)/50))
+
+    # initiate empty list to store resolved names; use ITIS and GBIF
+    resolved_te_names <- NULL
+
+    message("Resolving taxonomic data.")
+
+    for (i in seq_along(name_batches)) {
+      # paste all names in batch into 1 string to search on
+      temp_names <- paste(name_batches[[i]], collapse = "%7C")
+      temp_names <- gsub(" ", "%20", temp_names)
+
+      gnv_url <- paste0("https://verifier.globalnames.org/api/v1/verifications/",
+                        temp_names,
+                        "?&data_sources=3%7C11&capitalize=true")
+
+      tryCatch({
+        gnv_query <- httr::GET(gnv_url)
+      },
+      error=function(e) {
+        print(e)
+        stop("Connection to Global Names Verifier failed.")
+      })
+
+      gnv_response <- jsonlite::fromJSON(httr::content(gnv_query, as = "text", encoding = "UTF-8"))$names
+
+      # unnest results into one dataframe; rename and select relevant columns
+      temp_results <- tidyr::unnest(gnv_response,
+                                    cols = c(bestResult),
+                                    names_sep = "_") |>
+        dplyr::rename(submittedName = name,
+                      taxonSource = bestResult_dataSourceTitleShort,
+                      currentTaxonID = bestResult_currentRecordId,
+                      currentName = bestResult_currentCanonicalSimple) |>
+        dplyr::select(submittedName, currentName, currentTaxonID, taxonSource)
+      resolved_te_names <- rbind(resolved_te_names, temp_results)
+    }
+
+    # get list of species that weren't resolved
+    no_match <- resolved_te_names$submittedName[which(is.na(resolved_te_names$currentName))]
+
+    if (length(no_match) > 0) {
+      # print message with names that were not resolved
+      cli::cli_alert_danger(paste("The following names were not resolved:", paste0("'", no_match, "'", collapse = " | ")))
+    }
+
+    # keep only distinct rows in resolved names df
+    resolved_te_names <- resolved_te_names |>
+      dplyr::distinct()
+
+    # join to TE species list from ECOS
+    all_te_species_resolved <- all_te_species |>
+      dplyr::left_join(resolved_te_names, by = dplyr::join_by(scientificNameCleaned == submittedName),
+                       relationship = "many-to-many") |>
+      dplyr::select(-scientificNameCleaned)
+
+    # write file to user's cache
+    message("Writing T&E species file with resolved taxonomy to cache.")
+    readr::write_csv(all_te_species_resolved, paste0(rappdirs::user_cache_dir(), "/resolved_te_species.csv"))
+
+  } else {
+    # if species list is not refreshed, read species list from cache
+    all_te_species_resolved <- suppressMessages(readr::read_csv(paste0(rappdirs::user_cache_dir(), "/", "resolved_te_species.csv")))
+  }
+
+  # return dataframe with te species, if requested
+  if (return_object) {
+    return(all_te_species_resolved)
+  }
+}
