@@ -612,3 +612,206 @@ load_te_species <- function(force_refresh = FALSE, domestic_only = TRUE, return_
     return(all_te_species_resolved)
   }
 }
+
+#' Get a list of threatened or endangered species in a data set
+#'
+#' @description `check_te_species()` generates a data frame with threatened or endangered species in the input data set by matching scientific names to the USFWS's catalog of T&E species.
+#'
+#' @details `check_te_species()` relies on a file cached in load_te_species(). If this file does not exist, the function will exit with an error.
+#'
+#' @param x
+#'     (data frame) A data frame containing scientific names.
+#' @param sciname_col
+#'     (character or numeric) The name or index of the column containing scientific names (genus and specific epithet).
+#' @param resolve_taxonomy
+#'     (logical) Defaults to TRUE. TRUE means taxonomic names will be resolved to current names and record IDs using ITIS and GBIF.
+#'     Set to FALSE if taxonomy has already been resolved using one or both of these databases.
+#' @param listing_status
+#'     (character) Defaults to "all". A user may choose from "listed" to view only listed species, "listed or proposed" to view listed species and species proposed for listing
+#'     or "all" to view listed, proposed, and species of concern.
+#' @param viewer_table
+#'     (logical) Defaults to FALSE. If set to TRUE, shows the returned table in the plot viewer in R, complete with links to the species profiles in the ECOS and ITIS/GBIF databases.
+#'
+#' @return The function returns a data frame with the name of each submitted record that matched a threatened or endangered species,
+#' the matched scientific name, common name, taxonomic group, listing status under the Endangered Species Act, listing status category,
+#' a description of where the species is considered threatened or endangered and its ECOS profile ID.
+#'
+#' @export
+#' @examples
+#' \dontrun{
+#' check_te_species(x = sfcn_mammals, species_col = "scientificName", resolve_taxonomy = FALSE, viewer_table = TRUE)
+#' check_te_species(x = sfcn_mammals, species_col = "scientificName", listing_status = "listed")
+
+check_te_species <- function(x,
+                             sciname_col,
+                             resolve_taxonomy = TRUE,
+                             listing_status = "all",
+                             viewer_table = FALSE) {
+  # check that x is a data frame and species_col exists in x
+  if (!any(class(x) == "data.frame")) {
+    stop("Input must be a data frame.")
+  }
+
+  if (is.null(x[[sciname_col]])) {
+    stop("Scientific name column specified must exist in input data frame.")
+  }
+
+  # get path to cached te species list
+  cached_species_list <- paste0(rappdirs::user_cache_dir(), "/", "resolved_te_species.csv")
+
+  # check that cached file exists
+  if (file.exists(cached_species_list)) {
+    # check date cached file was last modified
+    last_modified <- file.info(cached_species_list)$mtime
+    if (difftime(Sys.time(), last_modified, units = c("days")) > 30) {
+      # if cached species list was last modifed over 30 days ago, prompt user to refresh data
+      stop("T&E species file with resolved taxonomy was last modified over 30 days ago. Use QCkit::load_te_species() to refresh data.")
+    } else {
+      # read in cached species list
+      te_list <- suppressMessages(readr::read_csv(cached_species_list))
+    }
+  } else {
+    # if cached species list does not exist, prompt user to load data
+    stop("T&E species file with resolved taxonomy not found in cache. Use QCkit::load_te_species() to load data.")
+  }
+
+  # message with data source and date loaded
+  message("Your T&E check used data pulled from: ",
+          crayon::bold$green("https://ecos.fws.gov/ecp/"), " on ",
+          crayon::bold$green(last_modified), sep = "")
+
+
+  if (listing_status == "listed") {
+    te_list <- te_list |>
+      dplyr::filter(ECOS_statusCategory == "Listed")
+  } else if (listing_status == "listed or proposed") {
+    te_list <- te_list |>
+      dplyr::filter(ECOS_statusCategory %in% c("Listed", "Proposed for Listing"))
+  }
+
+  # get scientific names from input as a character vector; remove NAs
+  scinames <- unique(x[[sciname_col]])
+  scinames <- scinames[!is.na(scinames)]
+
+  # if resolved taxonomy is requested, use Global Names Verifier (GNV)
+  if (resolve_taxonomy) {
+
+    # split names into batches of 50 to pass through GNV
+    input_name_batches <- split(scinames, ceiling(seq_along(scinames)/50))
+
+    # initiate empty list to store resolved names; use ITIS and GBIF
+    input_names_resolved <- NULL
+
+    message("Resolving taxonomic data.")
+
+    for (i in seq_along(input_name_batches)) {
+      # paste all names in batch into 1 string to search on
+      temp_names <- paste(input_name_batches[[i]], collapse = "%7C")
+      temp_names <- gsub(" ", "%20", temp_names)
+
+      gnv_url <- paste0("https://verifier.globalnames.org/api/v1/verifications/",
+                        temp_names,
+                        "?&data_sources=3%7C11&capitalize=true")
+
+      tryCatch({
+        gnv_query <- httr::GET(gnv_url)
+      },
+      error=function(e) {
+        print(e)
+        stop("Connection to Global Names Verifier failed.")
+      })
+
+      gnv_response <- jsonlite::fromJSON(httr::content(gnv_query, as = "text", encoding = "UTF-8"))$names
+
+      # unnest results into one dataframe; rename and select relevant columns
+      temp_results <- tidyr::unnest(gnv_response,
+                                    cols = c(bestResult),
+                                    names_sep = "_") |>
+        dplyr::rename(INPUT_scientificName = name,
+                      INPUT_currentName = bestResult_currentCanonicalSimple) |>
+        dplyr::select(INPUT_scientificName, INPUT_currentName)
+      input_names_resolved <- rbind(input_names_resolved, temp_results)
+    }
+
+    # get list of species that weren't resolved
+    no_match <- input_names_resolved$INPUT_scientificName[which(is.na(input_names_resolved$INPUT_currentName))]
+
+    if (length(no_match) > 0) {
+      # Print message with names that were not resolved
+      cli::cli_alert_danger(paste("The following names were not resolved:", paste0("'", no_match, "'", collapse = " | ")))
+    }
+
+    # keep only distinct rows in resolved names df
+    input_names_resolved <- input_names_resolved |>
+      dplyr::distinct()
+
+    # join with te species list by resolved/current name for species that were resolved
+    found_te_species <- input_names_resolved |>
+      dplyr::filter(!is.na(INPUT_currentName)) |>
+      dplyr::inner_join(te_list, by = dplyr::join_by(INPUT_currentName == currentName))
+
+    # special case--check if any species in ECOS list that *weren't* resolved are in the input data frame
+    te_unresolved <- te_list |>
+      dplyr::filter(is.na(currentName))
+
+    unresolved_te_species <- input_names_resolved[which(input_names_resolved$INPUT_scientificName
+                                                        %in% te_unresolved$ECOS_scientificName), ] |>
+      dplyr::inner_join(te_list, by = dplyr::join_by(INPUT_scientificName == ECOS_scientificName)) |>
+      dplyr::mutate(ECOS_scientificName = INPUT_scientificName, .after = INPUT_currentName) |>
+      dplyr::select(-currentName)
+
+    full_te_species <- rbind(found_te_species, unresolved_te_species)
+  } else {
+    # if resolved taxonomy is not requested, use sciname_col to filter results
+    te_species_ECOS_name <- te_list |>
+      dplyr::filter(ECOS_scientificName %in% scinames) |>
+      dplyr::mutate(INPUT_scientificName = ECOS_scientificName, .before = 1)
+
+    te_species_current_name <- te_list |>
+      dplyr::filter(currentName %in% scinames) |>
+      dplyr::mutate(INPUT_scientificName = currentName, .before = 1)
+
+    full_te_species <- rbind(te_species_ECOS_name, te_species_current_name) |>
+      dplyr::distinct()
+  }
+  # if no species in the list:
+  if (nrow(full_te_species) == 0) {
+    message("No T&E species found in your dataset.")
+  } else  if (nrow(full_te_species) > 0) {
+    message(paste0(nrow(full_te_species), " T&E species were found in your dataset."))
+  }
+
+  if (viewer_table) {
+    te_species_table_gt <- full_te_species |>
+      dplyr::mutate(ECOS_ID = paste0("https://ecos.fws.gov/ecp/species/", ECOS_ID)) |>
+      dplyr::mutate(currentTaxonID = as.character(currentTaxonID)) |>
+      dplyr::mutate(currentTaxonID = dplyr::case_when(taxonSource == "ITIS" ~
+                                                        paste0("https://www.itis.gov/servlet/SingleRpt/SingleRpt?search_topic=TSN&search_value=", currentTaxonID),
+                                                      taxonSource == "GBIF" ~
+                                                        paste0("https://www.gbif.org/species/", currentTaxonID),
+                                                      TRUE ~ "")) |>
+      dplyr::mutate(ECOS_listingStatus = factor(ECOS_listingStatus, levels = c("Species of Concern",
+                                                                               "Proposed Endangered",
+                                                                               "Proposed Threatened",
+                                                                               "Proposed Similarity of Appearance (Threatened)",
+                                                                               "Endangered",
+                                                                               "Threatened",
+                                                                               "Experimental Population, Non-Essential",
+                                                                               "Similarity of Appearance (Threatened)")))
+
+
+    print(te_species_table_gt |>
+            gt::gt() |>
+            gt::fmt_url(columns = ECOS_ID,
+                        label = gsub("https://ecos.fws.gov/ecp/species/", "", te_species_table_gt$ECOS_ID)) |>
+            gt::fmt_url(columns = currentTaxonID,
+                        label = stringr::str_extract_all(te_species_table_gt$currentTaxonID, "[[:digit:]]+")) |>
+            gt::data_color(
+              columns = ECOS_listingStatus,
+              method = "factor",
+              palette = c("yellow", "orange", "orange", "orange", "red4", "red4", "red4", "red4")
+            ))
+  }
+
+  return(full_te_species)
+}
