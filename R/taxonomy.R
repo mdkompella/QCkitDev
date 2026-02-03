@@ -459,6 +459,7 @@ te_check <- function(x, species_col, park_code, expansion = FALSE) {
 #' @examples
 #' \dontrun{
 #' load_te_species(force_refresh = TRUE, domestic_only = TRUE)
+#' }
 
 load_te_species <- function(force_refresh = FALSE, domestic_only = TRUE, return_object = FALSE) {
 
@@ -641,6 +642,7 @@ load_te_species <- function(force_refresh = FALSE, domestic_only = TRUE, return_
 #' \dontrun{
 #' check_te_species(x = sfcn_mammals, species_col = "scientificName", resolve_taxonomy = FALSE, viewer_table = TRUE)
 #' check_te_species(x = sfcn_mammals, species_col = "scientificName", listing_status = "listed")
+#' }
 
 check_te_species <- function(x,
                              sciname_col,
