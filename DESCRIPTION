@@ -63,7 +63,9 @@ Imports:
     purrr,
     lifecycle,
     httr2,
-    desc
+    desc,
+    rappdirs,
+    gt
 RoxygenNote: 7.3.2
 Suggests: 
     knitr,
