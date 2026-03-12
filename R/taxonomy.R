@@ -740,7 +740,7 @@ check_te_species <- function(x,
   } else  if (nrow(full_te_species) > 0) {
     message(paste0(nrow(full_te_species),
                    " T&E species were found in your dataset. Species may be ",
-                   "duplicated  if they appear in the ECOS database multiple ",
+                   "duplicated if they appear in the ECOS database multiple ",
                    "times, often because they are listed in different regions."))
   }
 
