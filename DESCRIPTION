@@ -63,15 +63,16 @@ Imports:
     purrr,
     lifecycle,
     httr2,
-    desc
+    desc,
+    gt,
+    tidyr
 RoxygenNote: 7.3.3
 Suggests: 
     knitr,
     rmarkdown,
     testthat (>= 3.0.0),
     rlang,
-    wk,
-    tidyr
+    wk
 VignetteBuilder: knitr
 URL: https://github.com/nationalparkservice/QCkit/, https://nationalparkservice.github.io/QCkit/
 BugReports: https://nationalparkservice.github.io/QCkit/
