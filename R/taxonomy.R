@@ -461,8 +461,13 @@ te_check <- function(x, species_col, park_code, expansion = FALSE) {
 #' @export
 #' @examples
 #' \dontrun{
-#' check_te_species(x = sfcn_mammals, species_col = "scientificName", resolve_taxonomy = FALSE, viewer_table = TRUE)
-#' check_te_species(x = sfcn_mammals, species_col = "scientificName", listing_status = "listed", domestic_only = FALSE)
+#' check_te_species(x = sfcn_mammals,
+#'                  species_col = "scientificName",
+#'                  resolve_taxonomy = FALSE)
+#' check_te_species(x = sfcn_mammals,
+#'                  species_col = "scientificName",
+#'                  listing_status = "listed",
+#'                  domestic_only = FALSE)
 #' }
 
 check_te_species <- function(x,
