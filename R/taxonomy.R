@@ -463,7 +463,7 @@ te_check <- function(x, species_col, park_code, expansion = FALSE) {
 #' \dontrun{
 #' check_te_species(x = sfcn_mammals,
 #'                  species_col = "scientificName",
-#'                  resolve_taxonomy = FALSE)
+#'                  resolve_input_taxonomy = FALSE)
 #' check_te_species(x = sfcn_mammals,
 #'                  species_col = "scientificName",
 #'                  listing_status = "listed",
@@ -472,7 +472,7 @@ te_check <- function(x, species_col, park_code, expansion = FALSE) {
 
 check_te_species <- function(x,
                              sciname_col,
-                             resolve_taxonomy = TRUE,
+                             resolve_input_taxonomy = TRUE,
                              listing_status = "all",
                              domestic_only = TRUE,
                              viewer_table = FALSE) {
@@ -637,7 +637,7 @@ check_te_species <- function(x,
   ## Resolve scientific names in input df ----
 
   # if resolved taxonomy is requested, use Global Names Verifier (GNV)
-  if (resolve_taxonomy) {
+  if (resolve_input_taxonomy) {
 
     # split names into batches of 50 to pass through GNV
     input_name_batches <- split(scinames, ceiling(seq_along(scinames)/50))
