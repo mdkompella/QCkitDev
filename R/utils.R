@@ -39,7 +39,25 @@ globalVariables(c("any_of",
                   "_UTMJOINCOL",
                   "decimalLatitude",
                   "decimalLongitude",
-                  "LatLong_CRS"))
+                  "LatLong_CRS",
+                  "ECOS_statusCategory",
+                  "ECOS_listingStatus",
+                  "ECOS_isForeign",
+                  "bestResult",
+                  "name",
+                  "bestResult_dataSourceTitleShort",
+                  "bestResult_currentRecordId",
+                  "bestResult_currentCanonicalSimple",
+                  "matchType",
+                  "submittedName",
+                  "currentName",
+                  "currentTaxonID",
+                  "taxonSource",
+                  "scientificNameCleaned",
+                  "INPUT_scientificName",
+                  "INPUT_currentName",
+                  "ECOS_scientificName",
+                  "ECOS_ID"))
 
 
 #' Retrieves an NPS user's email address
