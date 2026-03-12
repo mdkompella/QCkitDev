@@ -66,3 +66,74 @@ test_that("te_check expansion = TRUE returns correct columns", {
                            "status_code",
                            "status_explanation"))
 })
+
+test_that("check_te_species exits with error for non-dataframe input", {
+  expect_error(suppressMessages(
+    check_te_species(x = c("Lynx canadensis", "guttata"))),
+    regexp = "Input must be a data frame.")
+})
+
+test_that("check_te_species exits with error for bad column input", {
+  expect_error(suppressMessages(
+    check_te_species(x = df,
+                     sciname_col = "sciName")),
+    regexp = "Scientific name column specified must exist in input data frame.")
+})
+
+test_that("check_te_species exits with error for listing_status input", {
+  expect_error(suppressMessages(
+    check_te_species(x = df,
+                     sciname_col = "scientificName",
+                     listing_status = "de-listed")),
+    regexp = "Listing status must be one of: 'all', 'listed', and 'listed or proposed'.")
+})
+
+test_that("check_te_species exits with error for listing_status returns a data frame", {
+  x <- suppressMessages(check_te_species(x = df,
+                                         sciname_col = "scientificName"))
+  expect_s3_class(x, "data.frame")
+})
+
+test_that("check_te_species with good inputs prints messages", {
+  expect_message(check_te_species(x = df,
+                                  sciname_col = "scientificName"))
+})
+
+test_that("check_te_species on test df catches Lynx canadensis", {
+  x <- suppressMessages(check_te_species(x = df,
+                                         sciname_col = "scientificName"))
+  expect_match(x$INPUT_scientificName, "Lynx canadensis")
+})
+
+test_that("check_te_species returns correct columns", {
+  x <- suppressMessages(check_te_species(x = df,
+                                         sciname_col = "scientificName"))
+  expect_equal(names(x), c("INPUT_scientificName",
+                           "INPUT_currentName",
+                           "ECOS_scientificName",
+                           "ECOS_commonName",
+                           "ECOS_ID",
+                           "ECOS_taxonomicGroup",
+                           "ECOS_listingStatus",
+                           "ECOS_statusCategory",
+                           "ECOS_whereListed",
+                           "currentTaxonID",
+                           "taxonSource"))
+})
+
+test_that("check_te_species(resolve_input_taxonomy = FALSE) returns correct columns", {
+  x <- suppressMessages(check_te_species(x = df,
+                                         sciname_col = "scientificName",
+                                         resolve_input_taxonomy = FALSE))
+  expect_equal(names(x), c("INPUT_scientificName",
+                           "ECOS_scientificName",
+                           "ECOS_commonName",
+                           "ECOS_ID",
+                           "ECOS_taxonomicGroup",
+                           "ECOS_listingStatus",
+                           "ECOS_statusCategory",
+                           "ECOS_whereListed",
+                           "currentName",
+                           "currentTaxonID",
+                           "taxonSource"))
+})
