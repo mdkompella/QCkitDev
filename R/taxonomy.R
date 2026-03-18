@@ -475,7 +475,7 @@ check_te_species <- function(x,
                              resolve_input_taxonomy = TRUE,
                              listing_status = "all",
                              domestic_only = TRUE,
-                             viewer_table = FALSE) {
+                             viewer_table = TRUE) {
 
   # Pull T&E species list ----
 
